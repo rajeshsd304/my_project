@@ -1,0 +1,338 @@
+// NextCampus data model (foundation).
+// SQLite for local development; switch `provider` to "postgresql" for production.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String?  @unique
+  phone        String?  @unique
+  passwordHash String
+  /// ADMIN | TEACHER | STUDENT
+  role         String   @default("STUDENT")
+  active       Boolean  @default(true)
+  /// Incremented on password reset / deactivation to invalidate existing sessions.
+  tokenVersion Int      @default(0)
+  batchId      String?
+  batch        Batch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  questions Question[]
+  imports   QuestionImport[]
+  files     StoredFile[]
+  exams         Exam[]
+  attempts      Attempt[]
+  announcements Announcement[]
+  notes         StudyNote[]
+
+  @@index([role])
+  @@index([batchId])
+}
+
+model Batch {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  students      User[]
+  exams         ExamBatch[]
+  announcements Announcement[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// Single-row institution settings (id is always 1).
+model Setting {
+  id                    Int      @id @default(1)
+  institutionName       String   @default("NextCampus")
+  allowSelfRegistration Boolean  @default(false)
+  /// Pre-fills negative marking on new exams (can be changed per exam).
+  defaultNegativeMarking Boolean @default(false)
+  defaultNegativeMark    Float   @default(0.25)
+  /// Overall (weekly/monthly/all-time) leaderboard visibility.
+  overallLeaderboardEnabled Boolean @default(true)
+  overallLeaderboardTopN    Int?
+  updatedAt             DateTime @updatedAt
+}
+
+// ───────────────────────── Question bank ─────────────────────────
+
+/// Top-level category: Engineering, Medical, Public University A/B/C/D unit, GST/Cluster…
+model Unit {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  sortOrder Int       @default(0)
+  subjects  Subject[]
+  exams     Exam[]
+  createdAt DateTime  @default(now())
+}
+
+model Subject {
+  id        String     @id @default(cuid())
+  unitId    String
+  unit      Unit       @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int        @default(0)
+  topics    Topic[]
+  questions Question[]
+  notes     StudyNote[]
+  createdAt DateTime   @default(now())
+
+  @@unique([unitId, name])
+}
+
+model Topic {
+  id        String     @id @default(cuid())
+  subjectId String
+  subject   Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  name      String
+  questions Question[]
+  createdAt DateTime   @default(now())
+
+  @@unique([subjectId, name])
+}
+
+model Question {
+  id            String           @id @default(cuid())
+  subjectId     String
+  subject       Subject          @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  topicId       String?
+  topic         Topic?           @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  /// BN | EN | BOTH — exactly what students see (Bangla first, English below for BOTH).
+  language      String
+  textBn        String?
+  textEn        String?
+  explanationBn String?
+  explanationEn String?
+  /// EASY | MEDIUM | HARD
+  difficulty    String           @default("MEDIUM")
+  /// Normalised as ",tag one,tag two," for exact-tag filtering.
+  tags          String           @default("")
+  imageId       String?
+  image         StoredFile?      @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  /// Lower-cased concatenation of all text (Bangla + English) used for search.
+  searchText    String           @default("")
+  /// Hash of normalised question text, for duplicate warnings.
+  contentHash   String
+  createdById   String?
+  createdBy     User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  importId      String?
+  import        QuestionImport?  @relation(fields: [importId], references: [id], onDelete: SetNull)
+  /// Set instead of deleting when the question is already used by an exam.
+  deletedAt     DateTime?
+  options       QuestionOption[]
+  examQuestions ExamQuestion[]
+  answers       AttemptAnswer[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([subjectId])
+  @@index([topicId])
+  @@index([contentHash])
+  @@index([createdById])
+  @@index([deletedAt])
+}
+
+model QuestionOption {
+  id         String   @id @default(cuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  sortOrder  Int
+  textBn     String?
+  textEn     String?
+  isCorrect  Boolean  @default(false)
+
+  @@index([questionId])
+}
+
+model QuestionImport {
+  id            String     @id @default(cuid())
+  createdById   String?
+  createdBy     User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  fileName      String
+  /// SIMPLE | BOTH
+  template      String
+  totalRows     Int
+  importedCount Int
+  skippedCount  Int
+  warningCount  Int
+  questions     Question[]
+  undoneAt      DateTime?
+  createdAt     DateTime   @default(now())
+}
+
+/// Uploaded file (question images, study notes) stored under STORAGE_DIR.
+model StoredFile {
+  id          String     @id @default(cuid())
+  name        String
+  mime        String
+  size        Int
+  path        String
+  createdById String?
+  createdBy   User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  questions   Question[]
+  notes       StudyNote[]
+  createdAt   DateTime   @default(now())
+}
+
+// ───────────────────────── Exams ─────────────────────────
+
+model Exam {
+  id                String         @id @default(cuid())
+  title             String
+  /// FULL_MOCK | SUBJECT | TOPIC | PRACTICE (practice is untimed)
+  type              String
+  unitId            String?
+  unit              Unit?          @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  instructions      String         @default("")
+  /// Minutes; null = untimed.
+  durationMinutes   Int?
+  marksPerQuestion  Float          @default(1)
+  passMark          Float?
+  negativeMarking   Boolean        @default(false)
+  /// Deducted per wrong answer when negativeMarking is on. Skipped answers are never penalised.
+  negativeMark      Float          @default(0)
+  shuffleQuestions  Boolean        @default(false)
+  shuffleOptions    Boolean        @default(false)
+  showExplanations  Boolean        @default(true)
+  allowRetake       Boolean        @default(false)
+  /// LIVE (fixed window) | ALWAYS
+  schedule          String         @default("ALWAYS")
+  startsAt          DateTime?
+  endsAt            DateTime?
+  /// IMMEDIATE | AFTER_END (live exams only)
+  resultRelease     String         @default("IMMEDIATE")
+  /// ALL | BATCHES
+  audience          String         @default("ALL")
+  /// DRAFT | PUBLISHED
+  status            String         @default("DRAFT")
+  showLeaderboard   Boolean        @default(true)
+  leaderboardTopN   Int?
+  createdById       String?
+  createdBy         User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  questions         ExamQuestion[]
+  batches           ExamBatch[]
+  attempts          Attempt[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([status])
+  @@index([createdById])
+}
+
+model ExamQuestion {
+  id         String   @id @default(cuid())
+  examId     String
+  exam       Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  sortOrder  Int
+
+  @@unique([examId, questionId])
+  @@index([examId])
+}
+
+model ExamBatch {
+  examId  String
+  exam    Exam   @relation(fields: [examId], references: [id], onDelete: Cascade)
+  batchId String
+  batch   Batch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@id([examId, batchId])
+}
+
+model Attempt {
+  id            String          @id @default(cuid())
+  examId        String
+  exam          Exam            @relation(fields: [examId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attemptNo     Int             @default(1)
+  /// IN_PROGRESS | SUBMITTED
+  status        String          @default("IN_PROGRESS")
+  startedAt     DateTime        @default(now())
+  /// Server-side deadline (null = untimed). Device clocks never matter.
+  deadlineAt    DateTime?
+  submittedAt   DateTime?
+  autoSubmitted Boolean         @default(false)
+  /// JSON: question ids in the order this student sees them.
+  questionOrder String
+  /// JSON: { questionId: [optionId, …] } display order of options.
+  optionOrder   String
+  score         Float?
+  correct       Int?
+  wrong         Int?
+  skipped       Int?
+  negativeTotal Float?
+  totalMarks    Float?
+  percentage    Float?
+  timeTakenSec  Int?
+  answers       AttemptAnswer[]
+
+  @@unique([examId, userId, attemptNo])
+  @@index([examId, status])
+  @@index([userId])
+}
+
+model AttemptAnswer {
+  id              String   @id @default(cuid())
+  attemptId       String
+  attempt         Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId      String
+  question        Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  /// JSON array of selected option ids ("[]" = cleared).
+  selected        String   @default("[]")
+  markedForReview Boolean  @default(false)
+  /// Filled in when the attempt is scored.
+  isCorrect       Boolean?
+  marks           Float?
+  updatedAt       DateTime @updatedAt
+
+  @@unique([attemptId, questionId])
+}
+
+// ───────────────────────── Announcements & notes ─────────────────────────
+
+model Announcement {
+  id          String   @id @default(cuid())
+  title       String
+  /// Bangla, English or mixed; supports $…$ formulas.
+  body        String
+  pinned      Boolean  @default(false)
+  /// null = everyone
+  batchId     String?
+  batch       Batch?   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([createdAt])
+}
+
+model StudyNote {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  subjectId   String
+  subject     Subject     @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  /// TEXT | PDF
+  kind        String
+  body        String?
+  fileId      String?
+  file        StoredFile? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([subjectId])
+}

@@ -1,26 +1,141 @@
 @import "tailwindcss";
 
+/*
+ * NextCampus design tokens: black theme only (no light mode, no toggle).
+ * Page background is always true black; panels sit on very dark greys.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-2: #101010;
+  --surface-3: #141414;
+  --border: #1f1f1f;
+  --border-strong: #2c2c2c;
+  --text: #ffffff;
+  --text-muted: #a3a3a3;
+  --text-subtle: #7a7a7a;
+  --accent: #1a6bff; /* fills (buttons) — white text passes AA */
+  --accent-hover: #3580ff;
+  --accent-text: #6ea8ff; /* accent used as text/icons on black */
+  --accent-soft: rgba(26, 107, 255, 0.12);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.1);
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.1);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.1);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-subtle: var(--text-subtle);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --font-sans: var(--font-hind-siliguri), "Hind Siliguri", system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: #000000;
+  color: var(--text);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
+  min-height: 100dvh;
+}
+
+::selection {
+  background: var(--accent);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+/* Native form controls (date pickers, scrollbars, select popups) render dark. */
+input,
+select,
+textarea {
+  color-scheme: dark;
+}
+
+/* KaTeX formulas inherit the light text color on black; long display math scrolls on phones. */
+.katex {
+  /* Bangla inside \text{} falls back to Hind Siliguri, not a random system font. */
+  font-family: KaTeX_Main, var(--font-hind-siliguri), "Hind Siliguri", serif;
+  color: inherit;
+  font-size: 1.08em;
+}
+.rich .katex-display {
+  margin: 0.5em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-surface;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-muted;
+  }
+  .input {
+    @apply block w-full rounded-xl border border-line-strong bg-surface-2 px-3.5 py-2.5 text-base text-fg placeholder:text-subtle transition-colors outline-none focus:border-accent focus:ring-2 focus:ring-accent/30 disabled:opacity-60;
+  }
+  .btn {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-accent text-white hover:bg-accent-hover;
+  }
+  .btn-secondary {
+    @apply border border-line-strong bg-surface-3 text-fg hover:border-subtle;
+  }
+  .btn-ghost {
+    @apply text-muted hover:bg-surface-3 hover:text-fg;
+  }
+  .btn-danger {
+    @apply border border-danger/30 bg-danger-soft text-danger hover:border-danger/60;
+  }
+  .badge {
+    @apply inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium;
+  }
+  .table {
+    @apply w-full text-left text-sm;
+  }
+  .table th {
+    @apply border-b border-line px-4 py-3 text-xs font-semibold tracking-wide text-subtle uppercase;
+  }
+  .table td {
+    @apply border-b border-line px-4 py-3 align-middle;
+  }
+  .table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .table tbody tr:hover td {
+    @apply bg-surface-2;
+  }
 }
